@@ -169,6 +169,7 @@ public class LabService {
         lab.setEquipmentSummary((String) body.get("equipment"));
         lab.setStatus((String) body.getOrDefault("status", "available"));
         lab.setIntro((String) body.get("intro"));
+        lab.setCover((String) body.get("cover"));
     }
 
     private Map<String, Object> toVo(Lab lab) {
@@ -183,6 +184,7 @@ public class LabService {
         m.put("equipment", lab.getEquipmentSummary());
         m.put("status", lab.getStatus());
         m.put("intro", lab.getIntro());
+        m.put("cover", lab.getCover());
         return m;
     }
 

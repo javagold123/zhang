@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS lab (
   equipment_summary VARCHAR(512),
   status VARCHAR(20) DEFAULT 'available',
   intro TEXT,
+  cover VARCHAR(512),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   INDEX idx_status (status),
@@ -179,10 +180,11 @@ CREATE TABLE IF NOT EXISTS reservation_series (
 ) ENGINE=InnoDB;
 
 -- 外键追加：避免建表顺序导致 referenced table 不存在
+-- 约束名使用表前缀 reservation_，避免与库中其他表约束重名（防止 Duplicate foreign key constraint name）
 ALTER TABLE reservation
-  ADD CONSTRAINT fk_reservation_group_id
+  ADD CONSTRAINT reservation_fk_group_id
     FOREIGN KEY (group_id) REFERENCES reservation_group(id) ON DELETE SET NULL,
-  ADD CONSTRAINT fk_reservation_series_id
+  ADD CONSTRAINT reservation_fk_series_id
     FOREIGN KEY (series_id) REFERENCES reservation_series(id) ON DELETE SET NULL;
 
 -- 6. 公告表

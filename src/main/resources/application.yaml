@@ -16,11 +16,18 @@ server:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
+    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
   global-config:
     db-config:
       id-type: auto
-
 # JWT
 jwt:
   secret: labor-jwt-secret-key-at-least-256-bits-for-hs256
   expiration-ms: 604800000
+
+minio:
+  endpoint: http://192.168.88.130:9000
+  access-key: IvQ5NcCtz3poHkLpSWou
+  secret-key: YZgsirNwCjxxZOG8vQPmgOZhlA3T5ubd1qbuzvKD
+  bucket: laboratory
+  public-prefix: public

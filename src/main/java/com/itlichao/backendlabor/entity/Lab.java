@@ -23,6 +23,7 @@ public class Lab {
     private String equipmentSummary;
     private String status;
     private String intro;
+    private String cover;
     @TableField("created_at")
     private LocalDateTime createdAt;
     @TableField("updated_at")
