@@ -18,13 +18,15 @@ public class LabService {
 
     private final LabMapper labMapper;
     private final LabEquipmentMapper equipmentMapper;
+    private final EquipmentMapper equipmentItemMapper;
     private final LabOpenTimeMapper openTimeMapper;
     private final ReservationMapper reservationMapper;
 
-    public LabService(LabMapper labMapper, LabEquipmentMapper equipmentMapper,
+    public LabService(LabMapper labMapper, LabEquipmentMapper equipmentMapper, EquipmentMapper equipmentItemMapper,
                       LabOpenTimeMapper openTimeMapper, ReservationMapper reservationMapper) {
         this.labMapper = labMapper;
         this.equipmentMapper = equipmentMapper;
+        this.equipmentItemMapper = equipmentItemMapper;
         this.openTimeMapper = openTimeMapper;
         this.reservationMapper = reservationMapper;
     }
@@ -51,6 +53,14 @@ public class LabService {
         List<LabEquipment> equipments = equipmentMapper.selectList(
                 new LambdaQueryWrapper<LabEquipment>().eq(LabEquipment::getLabId, id));
         vo.put("equipmentList", equipments.stream().map(this::equipToMap).collect(Collectors.toList()));
+        vo.put("equipmentIds", equipments.stream().map(LabEquipment::getEquipmentId).filter(Objects::nonNull).collect(Collectors.toList()));
+        Map<Long, Integer> qtyMap = new HashMap<>();
+        for (LabEquipment e : equipments) {
+            if (e.getEquipmentId() != null) {
+                qtyMap.put(e.getEquipmentId(), e.getQuantity() != null ? e.getQuantity() : 0);
+            }
+        }
+        vo.put("equipmentQuantities", qtyMap);
         LabOpenTime ot = openTimeMapper.selectOne(new LambdaQueryWrapper<LabOpenTime>().eq(LabOpenTime::getLabId, id));
         vo.put("openTime", openTimeToMap(ot));
         return vo;
@@ -125,21 +135,26 @@ public class LabService {
         equipmentMapper.delete(new LambdaQueryWrapper<LabEquipment>().eq(LabEquipment::getLabId, id));
         openTimeMapper.delete(new LambdaQueryWrapper<LabOpenTime>().eq(LabOpenTime::getLabId, id));
         labMapper.deleteById(id);
+
+        recalcEquipmentRemaining();
     }
 
     @Transactional
     public void saveEquipment(Long labId, List<Map<String, Object>> list) {
         equipmentMapper.delete(new LambdaQueryWrapper<LabEquipment>().eq(LabEquipment::getLabId, labId));
-        if (list == null) return;
-        for (Map<String, Object> m : list) {
-            LabEquipment e = new LabEquipment();
-            e.setLabId(labId);
-            e.setName((String) m.get("name"));
-            e.setQuantity(getInt(m, "quantity", 1));
-            e.setType((String) m.getOrDefault("type", "设备"));
-            e.setStatus((String) m.getOrDefault("status", "正常"));
-            equipmentMapper.insert(e);
+        if (list != null) {
+            for (Map<String, Object> m : list) {
+                LabEquipment e = new LabEquipment();
+                e.setLabId(labId);
+                e.setEquipmentId(getLong(m, "equipmentId"));
+                e.setName((String) m.get("name"));
+                e.setQuantity(getInt(m, "quantity", 1));
+                e.setType((String) m.getOrDefault("type", "设备"));
+                e.setStatus((String) m.getOrDefault("status", "正常"));
+                equipmentMapper.insert(e);
+            }
         }
+        recalcEquipmentRemaining();
     }
 
     @Transactional
@@ -238,6 +253,17 @@ public class LabService {
         return def;
     }
 
+    private Long getLong(Map<String, Object> m, String key) {
+        Object v = m.get(key);
+        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof String) {
+            try {
+                return Long.parseLong((String) v);
+            } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
     private String toJson(List<?> list) {
         if (list == null || list.isEmpty()) return "[]";
         StringBuilder sb = new StringBuilder("[");
@@ -263,5 +289,31 @@ public class LabService {
             if (!part.isEmpty()) out.add(part);
         }
         return out;
+    }
+
+    @Transactional
+    public void recalcEquipmentRemaining() {
+        // 1) 汇总每个 equipment_id 被分配的总量
+        Map<Long, Integer> assigned = new HashMap<>();
+        List<LabEquipment> allocations = equipmentMapper.selectList(new LambdaQueryWrapper<LabEquipment>().isNotNull(LabEquipment::getEquipmentId));
+        for (LabEquipment le : allocations) {
+            Long equipmentId = le.getEquipmentId();
+            if (equipmentId == null) continue;
+            int qty = le.getQuantity() != null ? le.getQuantity() : 0;
+            assigned.put(equipmentId, assigned.getOrDefault(equipmentId, 0) + qty);
+        }
+
+        // 2) 更新 equipment.remaining，并校验不允许超分配
+        List<Equipment> items = equipmentItemMapper.selectList(null);
+        for (Equipment e : items) {
+            int total = e.getQuantity() != null ? e.getQuantity() : 0;
+            int used = assigned.getOrDefault(e.getId(), 0);
+            int remaining = total - used;
+            if (remaining < 0) {
+                throw new RuntimeException("设备【" + e.getName() + "】分配数量超出总量（总量=" + total + ", 已分配=" + used + "）");
+            }
+            e.setRemaining(remaining);
+            equipmentItemMapper.updateById(e);
+        }
     }
 }

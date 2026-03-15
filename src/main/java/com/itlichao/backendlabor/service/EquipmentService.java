@@ -1,8 +1,18 @@
 package com.itlichao.backendlabor.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
-import com.itlichao.backendlabor.entity.*;
-import com.itlichao.backendlabor.mapper.*;
+import com.itlichao.backendlabor.entity.Equipment;
+import com.itlichao.backendlabor.entity.EquipmentBorrow;
+import com.itlichao.backendlabor.entity.EquipmentMaintenance;
+import com.itlichao.backendlabor.entity.EquipmentUsageLog;
+import com.itlichao.backendlabor.entity.Lab;
+import com.itlichao.backendlabor.entity.SysUser;
+import com.itlichao.backendlabor.mapper.EquipmentBorrowMapper;
+import com.itlichao.backendlabor.mapper.EquipmentMaintenanceMapper;
+import com.itlichao.backendlabor.mapper.EquipmentMapper;
+import com.itlichao.backendlabor.mapper.EquipmentUsageLogMapper;
+import com.itlichao.backendlabor.mapper.LabMapper;
+import com.itlichao.backendlabor.mapper.SysUserMapper;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -21,7 +31,6 @@ public class EquipmentService {
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm");
 
     private final EquipmentMapper equipmentMapper;
-    private final EquipmentReservationMapper reservationMapper;
     private final EquipmentBorrowMapper borrowMapper;
     private final EquipmentMaintenanceMapper maintenanceMapper;
     private final EquipmentUsageLogMapper usageLogMapper;
@@ -30,7 +39,6 @@ public class EquipmentService {
 
     public EquipmentService(
             EquipmentMapper equipmentMapper,
-            EquipmentReservationMapper reservationMapper,
             EquipmentBorrowMapper borrowMapper,
             EquipmentMaintenanceMapper maintenanceMapper,
             EquipmentUsageLogMapper usageLogMapper,
@@ -38,7 +46,6 @@ public class EquipmentService {
             SysUserMapper userMapper
     ) {
         this.equipmentMapper = equipmentMapper;
-        this.reservationMapper = reservationMapper;
         this.borrowMapper = borrowMapper;
         this.maintenanceMapper = maintenanceMapper;
         this.usageLogMapper = usageLogMapper;
@@ -47,10 +54,9 @@ public class EquipmentService {
     }
 
     // -------- equipment items --------
-    public List<Map<String, Object>> listItems(Long labId, String status, String search) {
+    public List<Map<String, Object>> listItems(String status, String search) {
         LambdaQueryWrapper<Equipment> q = new LambdaQueryWrapper<>();
         q.orderByDesc(Equipment::getUpdatedAt);
-        if (labId != null) q.eq(Equipment::getLabId, labId);
         if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) q.eq(Equipment::getStatus, status);
         if (search != null && !search.isBlank()) {
             String s = search.trim();
@@ -64,13 +70,13 @@ public class EquipmentService {
         String name = getStr(body, "name");
         if (name == null || name.isBlank()) throw new RuntimeException("设备名称不能为空");
         Equipment e = new Equipment();
-        e.setLabId(getLong(body, "labId"));
         e.setAssetNo(getStr(body, "assetNo"));
         e.setName(name.trim());
         e.setType(getStr(body, "type"));
         e.setModel(getStr(body, "model"));
         e.setStatus(getStr(body, "status") != null ? getStr(body, "status") : "available");
         e.setQuantity(body.get("quantity") instanceof Number n ? n.intValue() : 1);
+        e.setRemaining(body.get("remaining") instanceof Number r ? r.intValue() : e.getQuantity());
         e.setLocation(getStr(body, "location"));
         e.setNote(getStr(body, "note"));
         e.setCreatedAt(LocalDateTime.now());
@@ -84,13 +90,13 @@ public class EquipmentService {
     public void updateItem(Long id, Map<String, Object> body) {
         Equipment e = equipmentMapper.selectById(id);
         if (e == null) throw new RuntimeException("设备不存在");
-        if (body.get("labId") != null) e.setLabId(getLong(body, "labId"));
         if (body.get("assetNo") != null) e.setAssetNo(getStr(body, "assetNo"));
         if (body.get("name") != null) e.setName(getStr(body, "name"));
         if (body.get("type") != null) e.setType(getStr(body, "type"));
         if (body.get("model") != null) e.setModel(getStr(body, "model"));
         if (body.get("status") != null) e.setStatus(getStr(body, "status"));
         if (body.get("quantity") instanceof Number n) e.setQuantity(n.intValue());
+        if (body.get("remaining") instanceof Number r) e.setRemaining(r.intValue());
         if (body.get("location") != null) e.setLocation(getStr(body, "location"));
         if (body.get("note") != null) e.setNote(getStr(body, "note"));
         e.setUpdatedAt(LocalDateTime.now());
@@ -102,54 +108,6 @@ public class EquipmentService {
     public void deleteItem(Long id) {
         equipmentMapper.deleteById(id);
         log(id, null, "delete", "删除设备#" + id);
-    }
-
-    // -------- reservations --------
-    public List<Map<String, Object>> listReservations(Long userId, boolean mine, String status) {
-        LambdaQueryWrapper<EquipmentReservation> q = new LambdaQueryWrapper<>();
-        if (mine) q.eq(EquipmentReservation::getUserId, userId);
-        if (status != null && !status.isBlank() && !"all".equalsIgnoreCase(status)) q.eq(EquipmentReservation::getStatus, status);
-        q.orderByDesc(EquipmentReservation::getCreatedAt);
-        return reservationMapper.selectList(q).stream().map(this::reservationVo).collect(Collectors.toList());
-    }
-
-    @Transactional
-    public EquipmentReservation createReservation(Long userId, Map<String, Object> body) {
-        Long equipmentId = getLong(body, "equipmentId");
-        String dateStr = getStr(body, "date");
-        String startStr = getStr(body, "startTime");
-        String endStr = getStr(body, "endTime");
-        if (equipmentId == null || dateStr == null) throw new RuntimeException("参数不完整");
-        LocalDate date = LocalDate.parse(dateStr);
-        LocalTime start = startStr != null && !startStr.isBlank() ? LocalTime.parse(startStr, TIME_FMT) : null;
-        LocalTime end = endStr != null && !endStr.isBlank() ? LocalTime.parse(endStr, TIME_FMT) : null;
-        if (start != null && end != null && !end.isAfter(start)) throw new RuntimeException("结束时间必须晚于开始时间");
-        EquipmentReservation r = new EquipmentReservation();
-        r.setEquipmentId(equipmentId);
-        r.setUserId(userId);
-        r.setReserveDate(date);
-        r.setStartTime(start);
-        r.setEndTime(end);
-        r.setPurpose(getStr(body, "purpose"));
-        r.setStatus("pending");
-        r.setCreatedAt(LocalDateTime.now());
-        r.setUpdatedAt(LocalDateTime.now());
-        reservationMapper.insert(r);
-        log(equipmentId, userId, "reserve", "提交设备预约#" + r.getId());
-        return r;
-    }
-
-    @Transactional
-    public void approveReservation(Long id, Long approverId, boolean approved) {
-        EquipmentReservation r = reservationMapper.selectById(id);
-        if (r == null) throw new RuntimeException("预约不存在");
-        if (!"pending".equals(r.getStatus())) throw new RuntimeException("该预约已处理");
-        r.setStatus(approved ? "approved" : "rejected");
-        r.setApproverId(approverId);
-        r.setApprovedAt(LocalDateTime.now());
-        r.setUpdatedAt(LocalDateTime.now());
-        reservationMapper.updateById(r);
-        log(r.getEquipmentId(), approverId, approved ? "reserve_approve" : "reserve_reject", "处理设备预约#" + id);
     }
 
     // -------- borrow --------
@@ -259,38 +217,16 @@ public class EquipmentService {
     private Map<String, Object> itemVo(Equipment e) {
         Map<String, Object> m = new HashMap<>();
         m.put("id", e.getId());
-        m.put("labId", e.getLabId());
         m.put("assetNo", e.getAssetNo());
         m.put("name", e.getName());
         m.put("type", e.getType());
         m.put("model", e.getModel());
         m.put("status", e.getStatus());
         m.put("quantity", e.getQuantity());
+        m.put("remaining", e.getRemaining());
         m.put("location", e.getLocation());
         m.put("note", e.getNote());
         m.put("createdAt", e.getCreatedAt() != null ? e.getCreatedAt().toString().replace("T", " ") : null);
-        if (e.getLabId() != null) {
-            Lab lab = labMapper.selectById(e.getLabId());
-            m.put("labName", lab != null ? lab.getName() : "");
-        }
-        return m;
-    }
-
-    private Map<String, Object> reservationVo(EquipmentReservation r) {
-        Map<String, Object> m = new HashMap<>();
-        m.put("id", r.getId());
-        m.put("equipmentId", r.getEquipmentId());
-        m.put("userId", r.getUserId());
-        m.put("date", r.getReserveDate() != null ? r.getReserveDate().toString() : null);
-        m.put("startTime", r.getStartTime() != null ? r.getStartTime().format(TIME_FMT) : null);
-        m.put("endTime", r.getEndTime() != null ? r.getEndTime().format(TIME_FMT) : null);
-        m.put("purpose", r.getPurpose());
-        m.put("status", r.getStatus());
-        m.put("createdAt", r.getCreatedAt() != null ? r.getCreatedAt().toString().replace("T", " ") : null);
-        Equipment e = equipmentMapper.selectById(r.getEquipmentId());
-        m.put("equipName", e != null ? e.getName() : "");
-        SysUser u = userMapper.selectById(r.getUserId());
-        m.put("userName", u != null ? u.getName() : "");
         return m;
     }
 
@@ -348,6 +284,22 @@ public class EquipmentService {
     private static String getStr(Map<String, Object> m, String k) {
         Object v = m.get(k);
         return v != null ? v.toString() : null;
+    }
+
+    private static Long getLongCast(Object v) {
+        if (v instanceof Number) return ((Number) v).longValue();
+        if (v instanceof String s) {
+            try { return Long.parseLong(s); } catch (NumberFormatException ignored) {}
+        }
+        return null;
+    }
+
+    private static Integer getIntCast(Object v) {
+        if (v instanceof Number) return ((Number) v).intValue();
+        if (v instanceof String s) {
+            try { return Integer.parseInt(s); } catch (NumberFormatException ignored) {}
+        }
+        return null;
     }
 
     private static Long getLong(Map<String, Object> m, String k) {

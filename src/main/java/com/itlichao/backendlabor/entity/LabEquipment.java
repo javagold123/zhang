@@ -15,6 +15,8 @@ public class LabEquipment {
     private Long id;
     @TableField("lab_id")
     private Long labId;
+    @TableField("equipment_id")
+    private Long equipmentId;
     private String name;
     private Integer quantity;
     private String type;

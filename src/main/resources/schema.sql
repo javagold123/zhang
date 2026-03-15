@@ -24,7 +24,6 @@ DROP TABLE IF EXISTS experiment_project;
 DROP TABLE IF EXISTS equipment_usage_log;
 DROP TABLE IF EXISTS equipment_maintenance;
 DROP TABLE IF EXISTS equipment_borrow;
-DROP TABLE IF EXISTS equipment_reservation;
 DROP TABLE IF EXISTS equipment_comment;
 DROP TABLE IF EXISTS equipment;
 DROP TABLE IF EXISTS feedback;
@@ -82,6 +81,7 @@ CREATE TABLE IF NOT EXISTS lab (
 CREATE TABLE IF NOT EXISTS lab_equipment (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
   lab_id BIGINT NOT NULL,
+  equipment_id BIGINT,
   name VARCHAR(64) NOT NULL,
   quantity INT DEFAULT 1,
   type VARCHAR(32),
@@ -89,7 +89,8 @@ CREATE TABLE IF NOT EXISTS lab_equipment (
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (lab_id) REFERENCES lab(id) ON DELETE CASCADE,
-  INDEX idx_lab_id (lab_id)
+  INDEX idx_lab_id (lab_id),
+  INDEX idx_equipment_id (equipment_id)
 ) ENGINE=InnoDB;
 
 -- 4. 实验室开放时间表
@@ -340,19 +341,17 @@ CREATE TABLE IF NOT EXISTS experiment_achievement (
 -- 16. 设备管理：设备列表/预约/借用/维修/使用记录
 CREATE TABLE IF NOT EXISTS equipment (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  lab_id BIGINT,
   asset_no VARCHAR(64) UNIQUE,
   name VARCHAR(128) NOT NULL,
   type VARCHAR(64),
   model VARCHAR(128),
   status VARCHAR(20) DEFAULT 'available',
   quantity INT DEFAULT 1,
+  remaining INT DEFAULT 1,
   location VARCHAR(128),
   note VARCHAR(256),
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (lab_id) REFERENCES lab(id) ON DELETE SET NULL,
-  INDEX idx_lab (lab_id),
   INDEX idx_status (status),
   INDEX idx_type (type)
 ) ENGINE=InnoDB;
@@ -361,26 +360,6 @@ ALTER TABLE equipment_comment
   ADD CONSTRAINT fk_equipment_comment_equipment_id
     FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE SET NULL;
 
-CREATE TABLE IF NOT EXISTS equipment_reservation (
-  id BIGINT AUTO_INCREMENT PRIMARY KEY,
-  equipment_id BIGINT NOT NULL,
-  user_id BIGINT NOT NULL,
-  reserve_date DATE NOT NULL,
-  start_time TIME,
-  end_time TIME,
-  purpose VARCHAR(512),
-  status VARCHAR(20) DEFAULT 'pending',
-  approver_id BIGINT,
-  approved_at DATETIME,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  FOREIGN KEY (equipment_id) REFERENCES equipment(id) ON DELETE CASCADE,
-  FOREIGN KEY (user_id) REFERENCES sys_user(id) ON DELETE CASCADE,
-  FOREIGN KEY (approver_id) REFERENCES sys_user(id) ON DELETE SET NULL,
-  INDEX idx_equip_date (equipment_id, reserve_date),
-  INDEX idx_user (user_id),
-  INDEX idx_status (status)
-) ENGINE=InnoDB;
 
 CREATE TABLE IF NOT EXISTS equipment_borrow (
   id BIGINT AUTO_INCREMENT PRIMARY KEY,

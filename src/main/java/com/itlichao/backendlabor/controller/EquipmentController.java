@@ -19,11 +19,6 @@ public class EquipmentController {
         this.equipmentService = equipmentService;
     }
 
-    @GetMapping
-    public Result<List<Map<String, Object>>> listAll() {
-        return Result.ok(equipmentService.listItems(null, "all", null));
-    }
-
     private boolean isTeacherOrAdmin(HttpServletRequest request) {
         Object role = request.getAttribute(AuthInterceptor.ATTR_USER_ROLE);
         return role instanceof String r && ("teacher".equals(r) || "admin".equals(r));
@@ -32,11 +27,10 @@ public class EquipmentController {
     // -------- items --------
     @GetMapping("/items")
     public Result<List<Map<String, Object>>> listItems(
-            @RequestParam(required = false) Long labId,
             @RequestParam(required = false, defaultValue = "all") String status,
             @RequestParam(required = false) String search
     ) {
-        return Result.ok(equipmentService.listItems(labId, status, search));
+        return Result.ok(equipmentService.listItems(status, search));
     }
 
     @PostMapping("/items")
@@ -66,53 +60,6 @@ public class EquipmentController {
         if (!isTeacherOrAdmin(request)) return Result.fail(403, "无权限");
         try {
             equipmentService.deleteItem(id);
-            return Result.ok(null);
-        } catch (Exception ex) {
-            return Result.fail(400, ex.getMessage());
-        }
-    }
-
-    // -------- reservations --------
-    @GetMapping("/reservations")
-    public Result<List<Map<String, Object>>> listReservations(
-            @RequestParam(required = false, defaultValue = "true") boolean mine,
-            @RequestParam(required = false, defaultValue = "all") String status,
-            HttpServletRequest request
-    ) {
-        Long userId = (Long) request.getAttribute(AuthInterceptor.ATTR_USER_ID);
-        boolean allowAll = isTeacherOrAdmin(request) && !mine;
-        return Result.ok(equipmentService.listReservations(userId, !allowAll, status));
-    }
-
-    @PostMapping("/reservations")
-    public Result<Map<String, Object>> createReservation(@RequestBody Map<String, Object> body, HttpServletRequest request) {
-        Long userId = (Long) request.getAttribute(AuthInterceptor.ATTR_USER_ID);
-        try {
-            var r = equipmentService.createReservation(userId, body);
-            return Result.ok(Map.of("id", r.getId()));
-        } catch (Exception ex) {
-            return Result.fail(400, ex.getMessage());
-        }
-    }
-
-    @PostMapping("/reservations/{id}/approve")
-    public Result<Void> approveReservation(@PathVariable Long id, HttpServletRequest request) {
-        if (!isTeacherOrAdmin(request)) return Result.fail(403, "无权限");
-        Long approverId = (Long) request.getAttribute(AuthInterceptor.ATTR_USER_ID);
-        try {
-            equipmentService.approveReservation(id, approverId, true);
-            return Result.ok(null);
-        } catch (Exception ex) {
-            return Result.fail(400, ex.getMessage());
-        }
-    }
-
-    @PostMapping("/reservations/{id}/reject")
-    public Result<Void> rejectReservation(@PathVariable Long id, HttpServletRequest request) {
-        if (!isTeacherOrAdmin(request)) return Result.fail(403, "无权限");
-        Long approverId = (Long) request.getAttribute(AuthInterceptor.ATTR_USER_ID);
-        try {
-            equipmentService.approveReservation(id, approverId, false);
             return Result.ok(null);
         } catch (Exception ex) {
             return Result.fail(400, ex.getMessage());

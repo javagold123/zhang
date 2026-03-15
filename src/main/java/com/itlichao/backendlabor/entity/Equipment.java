@@ -14,9 +14,6 @@ public class Equipment {
     @TableId(type = IdType.AUTO)
     private Long id;
 
-    @TableField("lab_id")
-    private Long labId;
-
     @TableField("asset_no")
     private String assetNo;
 
@@ -25,6 +22,8 @@ public class Equipment {
     private String model;
     private String status;
     private Integer quantity;
+    @TableField("remaining")
+    private Integer remaining;
     private String location;
     private String note;
 
